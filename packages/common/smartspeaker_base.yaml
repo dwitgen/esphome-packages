@@ -1,0 +1,346 @@
+substitutions:
+  voice_assist_idle_phase_id: "1"
+  voice_assist_listening_phase_id: "2"
+  voice_assist_thinking_phase_id: "3"
+  voice_assist_replying_phase_id: "4"
+  voice_assist_not_ready_phase_id: "10"
+  voice_assist_error_phase_id: "11"
+  voice_assist_muted_phase_id: "12"
+
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2026.1.0
+  on_boot:
+    - priority: -100
+      then:
+        - light.turn_on:
+            id: led_ring
+            blue: 0%
+            red: 100%
+            green: 0%
+            effect: Fast Pulse
+        - delay: 1s
+        - wait_until:
+            condition:
+              wifi.connected:
+        - light.turn_on:
+            id: led_ring
+            blue: 0%
+            red: 100%
+            green: 50%
+            effect: Slow Pulse
+        - wait_until:
+            condition:
+              api.connected
+        - lambda: id(init_in_progress) = false;
+        - lambda: id(voice_assistant_phase) = ${voice_assist_idle_phase_id};
+        - script.execute: reset_led
+
+# Standard Logging and API
+logger:
+  level: DEBUG
+
+captive_portal:
+
+# ---------------------------------------------------------
+# Voice Assistant & Wake Word
+# ---------------------------------------------------------
+
+media_player:
+  - platform: speaker
+    name: None
+    id: speaker_media_player
+    volume_min: 0.5
+    volume_max: 0.8
+    announcement_pipeline:
+      speaker: tts_input
+      format: WAV
+      sample_rate: 48000
+      num_channels: 1
+    media_pipeline:
+      speaker: media_input
+      format: WAV
+      sample_rate: 48000
+      num_channels: 1
+    on_play:
+      - output.turn_on: amp_pin
+      - delay: 30ms
+      - micro_wake_word.stop
+      - delay: 30ms
+      - audio_dac.mute_off: es8311_dac
+    on_pause:
+      - output.turn_off: amp_pin
+      - delay: 300ms
+      - micro_wake_word.start
+    on_idle:
+      - output.turn_off: amp_pin
+      - delay: 300ms
+      - micro_wake_word.start
+
+micro_wake_word:
+  id: mww
+  models:
+    - ${wake_word_model}
+  on_wake_word_detected:
+    - voice_assistant.start:
+        wake_word: !lambda return wake_word;
+
+
+voice_assistant:
+  id: va
+  microphone: va_mic
+  speaker: tts_input
+  micro_wake_word: mww
+  noise_suppression_level: 2
+  auto_gain: 31dBFS
+  volume_multiplier: 2.0
+
+  on_listening:
+    - lambda: id(voice_assistant_phase) = ${voice_assist_listening_phase_id};
+    - script.execute: reset_led
+  on_stt_vad_end:
+    - lambda: id(voice_assistant_phase) = ${voice_assist_thinking_phase_id};
+    - script.execute: reset_led
+  on_tts_start:
+    - micro_wake_word.stop
+    - delay: 30ms
+    - output.turn_on: amp_pin
+    - light.turn_on:
+        id: led_ring
+        blue: 0%
+        red: 0%
+        green: 100%
+        brightness: 50%
+        effect: pulse
+    - delay: 50ms
+    - audio_dac.mute_off: es8311_dac
+  on_tts_stream_start:
+    - delay: 100ms
+    - lambda: id(voice_assistant_phase) = ${voice_assist_replying_phase_id};
+    - script.execute: reset_led
+  on_end:
+  - wait_until:
+      not:
+        voice_assistant.is_running:
+  - micro_wake_word.start
+  - lambda: id(voice_assistant_phase) = ${voice_assist_idle_phase_id};
+  - script.execute: reset_led
+  - audio_dac.mute_on: es8311_dac
+  - output.turn_off: amp_pin
+  - if:
+      condition:
+        and:
+          - switch.is_off: mute
+      then:
+        - wait_until:
+            lambda: return !id(mww).is_running() && !id(va).is_running();
+        - if:
+            condition:
+              lambda: return id(wake_word_engine_location).current_option() == "On device";
+            then:
+              - lambda: ESP_LOGD("micro_wake_word", "Resetting micro wake word pipeline (On device)...");
+              - micro_wake_word.stop
+              - delay: 500ms
+              - micro_wake_word.start
+
+  on_error:
+    - if:
+        condition:
+          lambda: return !id(init_in_progress);
+        then:
+          - lambda: id(voice_assistant_phase) = ${voice_assist_error_phase_id};
+          - script.execute: reset_led
+          - delay: 2s
+          - if:
+              condition:
+                switch.is_off: mute
+              then:
+                - lambda: id(voice_assistant_phase) = ${voice_assist_idle_phase_id};
+              else:
+                - lambda: id(voice_assistant_phase) = ${voice_assist_muted_phase_id};
+          - script.execute: reset_led
+
+select:
+  - platform: template
+    entity_category: config
+    name: Wake word engine location
+    id: wake_word_engine_location
+    optimistic: true
+    restore_value: true
+    options:
+      - In Home Assistant
+      - On device
+    initial_option: On device
+    on_value:
+      - wait_until:
+          lambda: return id(voice_assistant_phase) == ${voice_assist_muted_phase_id} || id(voice_assistant_phase) == ${voice_assist_idle_phase_id};
+      - if:
+          condition:
+            lambda: return x == "In Home Assistant";
+          then:
+            - wait_until:
+                lambda: return !id(va).is_running();
+            - micro_wake_word.stop
+            - delay: 300ms
+            - if:
+                condition:
+                  switch.is_off: mute
+                then:
+                  - lambda: id(va).set_use_wake_word(true);
+                  - voice_assistant.start_continuous:
+          else:
+            - wait_until:
+                lambda: return !id(mww).is_running();
+            - voice_assistant.stop
+            - delay: 300ms
+            - lambda: id(va).set_use_wake_word(false);
+            - micro_wake_word.start
+
+switch:
+  - platform: template
+    name: Mute
+    id: mute
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    entity_category: config
+    on_turn_off:
+      - if:
+          condition:
+            lambda: return !id(init_in_progress);
+          then:
+            - lambda: id(voice_assistant_phase) = ${voice_assist_idle_phase_id};
+            - if:
+                condition:
+                  not:
+                    - voice_assistant.is_running
+                then:
+                  - if:
+                      condition:
+                        lambda: return id(wake_word_engine_location).current_option() == "In Home Assistant";
+                      then:
+                  - lambda: id(va).set_use_wake_word(true);
+                  - voice_assistant.start_continuous
+                  - if:
+                      condition:
+                        lambda: return id(wake_word_engine_location).current_option() == "On device";
+                      then:
+                        - micro_wake_word.start
+            - script.execute: reset_led
+    on_turn_on:
+      - if:
+          condition:
+            lambda: return !id(init_in_progress);
+          then:
+            - lambda: id(va).set_use_wake_word(false);
+            - voice_assistant.stop
+            - micro_wake_word.stop
+            - lambda: id(voice_assistant_phase) = ${voice_assist_muted_phase_id};
+            - script.execute: reset_led
+  - platform: restart
+    name: "${name} Restart"
+  
+globals:
+  - id: init_in_progress
+    type: bool
+    restore_value: false
+    initial_value: "true"
+  - id: voice_assistant_phase
+    type: int
+    restore_value: false
+    initial_value: ${voice_assist_not_ready_phase_id}
+  - id: speaker_volume
+    type: int
+    restore_value: yes
+    initial_value: '50'  # Initial volume level (0-100)
+
+
+script:
+  - id: reset_led
+    then:
+      - if:
+          condition:
+            lambda: return !id(init_in_progress);
+          then:
+            - if:
+                condition:
+                  lambda: return id(voice_assistant_phase) == ${voice_assist_listening_phase_id};
+                then:
+                  - light.turn_on:
+                      id: led_ring
+                      blue: 100%
+                      red: 0%
+                      green: 0%
+                      brightness: 100%
+                      effect: wakeword
+            - if:
+                condition:
+                  lambda: return id(voice_assistant_phase) == ${voice_assist_thinking_phase_id};
+                then:
+                  - light.turn_on:
+                      id: led_ring
+                      blue: 100%
+                      red: 100%
+                      green: 0%
+                      brightness: 100%
+                      effect: Working
+                  - delay: 100ms
+            - if:
+                condition:
+                  lambda: return id(voice_assistant_phase) == ${voice_assist_replying_phase_id};
+                then:
+                  - light.turn_on:
+                      id: led_ring
+                      blue: 100%
+                      red: 0%
+                      green: 0%
+                      brightness: 100%
+                      effect: Working
+            - if:
+                condition:
+                  lambda: return id(voice_assistant_phase) == ${voice_assist_idle_phase_id};
+                then:
+                  - light.turn_on:
+                      id: led_ring
+                      blue: 100%
+                      red: 0%
+                      green: 0%
+                      brightness: 40%
+                      effect: none
+                  - delay: 200ms
+            - if:
+                condition:
+                  lambda: return id(voice_assistant_phase) == ${voice_assist_not_ready_phase_id};
+                then:
+                  - light.turn_on:
+                      id: led_ring
+                      blue: 40%
+                      red: 100%
+                      green: 0%
+                      effect: Slow Pulse
+            - if:
+                condition:
+                  lambda: return id(voice_assistant_phase) == ${voice_assist_error_phase_id};
+                then:
+                  - light.turn_on:
+                      id: led_ring
+                      blue: 0%
+                      red: 100%
+                      green: 0%
+                      brightness: 100%
+                      effect: none
+            - if:
+                condition:
+                  lambda: return id(voice_assistant_phase) == ${voice_assist_muted_phase_id};
+                then:
+                  - light.turn_off: led_ring
+          else:
+            - light.turn_on:
+                id: led_ring
+                blue: 0%
+                red: 100%
+                green: 0%
+                effect: Fast Pulse
+
+  
