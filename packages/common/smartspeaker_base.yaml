@@ -90,7 +90,7 @@ micro_wake_word:
 
 voice_assistant:
   id: va
-  microphone: va_mic
+  microphone: ${va_mic}
   speaker: tts_input
   micro_wake_word: mww
   noise_suppression_level: 2
@@ -344,3 +344,4 @@ script:
                 effect: Fast Pulse
 
   
+
