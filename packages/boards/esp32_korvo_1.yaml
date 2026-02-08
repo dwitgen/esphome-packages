@@ -21,12 +21,13 @@ psram:
   mode: quad
   speed: 40MHz
 
-#external_components:
-#  - source:
-#      type: git
-#      url: https://github.com/dwitgen/esphome-es8311
-#      ref: main
-#    components: [es8311]
+external_components:
+  - source:
+      type: git
+      url: https://github.com/dwitgen/esphome-es8311
+      ref: main
+      path: .
+    components: [es8311]
 
 # ---------------------------------------------------------
 # Hardware & Audio Configuration
@@ -300,7 +301,7 @@ output:
     id: amp_pin
 
 # Board scripts
-scripts:
+script:
   - id: clear_buttons
     then:
       - lambda: |-
@@ -310,5 +311,6 @@ scripts:
           id(btn_play).publish_state(false);
           id(btn_mode).publish_state(false);
           id(btn_record).publish_state(false);
+
 
 
