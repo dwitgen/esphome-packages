@@ -8,7 +8,7 @@ esp32:
   flash_size: 16MB
   framework:
     advanced:
-      minimum_chip_version: "3.0"
+      minimum_chip_revision: "3.0"
     type: esp-idf
     sdkconfig_options:
         CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
@@ -27,9 +27,11 @@ psram:
 
 external_components:
   - source:
-      type: local
-      path: external_components
-    components: [es8311]
+      type: git
+      url: https://github.com/dwitgen/esphome-es8311.git
+      ref: main
+      path: .
+    components: [ es8311 ]
 
 # ---------------------------------------------------------
 # Hardware & Audio Configuration
@@ -312,3 +314,4 @@ scripts:
           id(btn_play).publish_state(false);
           id(btn_mode).publish_state(false);
           id(btn_record).publish_state(false);
+
