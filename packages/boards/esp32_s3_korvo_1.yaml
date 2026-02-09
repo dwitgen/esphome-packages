@@ -28,10 +28,10 @@ psram:
 external_components:
   - source:
       type: git
-      url: https://github.com/dwitgen/esphome-es8311.git
+      url: https://github.com/dwitgen/esphome-es8311
       ref: main
       path: .
-    components: [ es8311 ]
+    components: [es8311]
 
 # ---------------------------------------------------------
 # Hardware & Audio Configuration
@@ -314,4 +314,5 @@ scripts:
           id(btn_play).publish_state(false);
           id(btn_mode).publish_state(false);
           id(btn_record).publish_state(false);
+
 
