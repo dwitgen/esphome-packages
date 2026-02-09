@@ -303,7 +303,7 @@ output:
     id: amp_pin
 
 # Board scripts
-scripts:
+script:
   - id: clear_buttons
     then:
       - lambda: |-
@@ -313,6 +313,7 @@ scripts:
           id(btn_play).publish_state(false);
           id(btn_mode).publish_state(false);
           id(btn_record).publish_state(false);
+
 
 
 
