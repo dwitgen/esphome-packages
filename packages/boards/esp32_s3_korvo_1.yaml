@@ -14,7 +14,6 @@ esp32:
         CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
         CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
         CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
-        CONFIG_AUDIO_BOARD_CUSTOM: "y"
         CONFIG_ESP_TLS_INSECURE: "y"
         CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY: "y"
         CONFIG_MBEDTLS_CERTIFICATE_BUNDLE: "y"
@@ -314,5 +313,6 @@ scripts:
           id(btn_play).publish_state(false);
           id(btn_mode).publish_state(false);
           id(btn_record).publish_state(false);
+
 
 
